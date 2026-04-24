@@ -27,6 +27,24 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  String? _validateEmail(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Введите email';
+    }
+    final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+    if (!emailRegex.hasMatch(value.trim())) {
+      return 'Некорректный email';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Введите пароль';
+    }
+    return null;
+  }
+
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -44,12 +62,18 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     if (error == null) {
-      socketService.connect(authService.currentUser!.id);
+      final userId = authService.currentUser!.id;
+
+      socketService.connect(userId);
       chatService.init(
         token: authService.token!,
         socketService: socketService,
       );
-      callService.init(socketService: socketService);
+      callService.init(
+        socketService: socketService,
+        currentUserId: userId,
+      );
+
       await chatService.loadChats();
 
       if (!mounted) return;
@@ -59,7 +83,10 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text(error),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -94,17 +121,20 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 48),
                   TextFormField(
                     controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(
                       labelText: 'Email',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.email),
                     ),
-                    validator: (v) => v!.isEmpty ? 'Введите email' : null,
+                    validator: _validateEmail,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _passwordController,
                     obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.done,
                     decoration: InputDecoration(
                       labelText: 'Пароль',
                       border: const OutlineInputBorder(),
@@ -120,7 +150,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                    validator: (v) => v!.isEmpty ? 'Введите пароль' : null,
+                    validator: _validatePassword,
+                    onFieldSubmitted: (_) => _login(),
                   ),
                   const SizedBox(height: 24),
                   SizedBox(

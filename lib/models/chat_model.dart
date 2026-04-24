@@ -20,6 +20,26 @@ class ChatModel {
     required this.updatedAt,
   });
 
+  ChatModel copyWith({
+    String? id,
+    List<UserModel>? participants,
+    bool? isGroup,
+    String? groupName,
+    MessageModel? lastMessage,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return ChatModel(
+      id: id ?? this.id,
+      participants: participants ?? this.participants,
+      isGroup: isGroup ?? this.isGroup,
+      groupName: groupName ?? this.groupName,
+      lastMessage: lastMessage ?? this.lastMessage,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
   factory ChatModel.fromJson(Map<String, dynamic> json) {
     return ChatModel(
       id: json['_id'] ?? json['id'] ?? '',

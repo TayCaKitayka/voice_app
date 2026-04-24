@@ -46,7 +46,10 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _init();
+    // ✅ Откладываем до первого кадра
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _init();
+    });
   }
 
   Future<void> _init() async {
@@ -62,13 +65,19 @@ class _SplashScreenState extends State<SplashScreen> {
       final socketService = context.read<SocketService>();
       final chatService = context.read<ChatService>();
       final callService = context.read<CallService>();
+      final userId = authService.currentUser!.id; // ✅ Получаем userId
 
-      socketService.connect(authService.currentUser!.id);
+      socketService.connect(userId);
       chatService.init(
         token: authService.token!,
         socketService: socketService,
+        userId: userId, // ✅ Передаем userId для фильтрации собственных сообщений
       );
-      callService.init(socketService: socketService);
+      callService.init(
+        socketService: socketService,
+        currentUserId: userId,
+      );
+
       await chatService.loadChats();
     }
 

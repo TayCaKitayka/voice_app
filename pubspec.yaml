@@ -11,7 +11,7 @@ dependencies:
     sdk: flutter
   http: ^1.1.2
   socket_io_client: ^2.0.3+1
-  flutter_webrtc: ^0.9.48
+  flutter_webrtc: ^0.12.5
   provider: ^6.1.1
   shared_preferences: ^2.2.2
   cupertino_icons: ^1.0.6
@@ -19,6 +19,11 @@ dependencies:
   intl: ^0.18.1
   permission_handler: ^11.1.0
   image_picker: ^1.0.7
+  dio: ^5.4.1
+  file_picker: ^8.0.0
+  share_plus: ^10.1.0
+  path_provider: ^2.1.2
+  open_filex: ^4.4.0
 
 dev_dependencies:
   flutter_test:

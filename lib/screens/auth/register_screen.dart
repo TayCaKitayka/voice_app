@@ -27,6 +27,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  String? _validateUsername(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Введите имя пользователя';
+    }
+    if (value.trim().length < 3) {
+      return 'Минимум 3 символа';
+    }
+    return null;
+  }
+
+  String? _validateEmail(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Введите email';
+    }
+    final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+    if (!emailRegex.hasMatch(value.trim())) {
+      return 'Некорректный email';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Введите пароль';
+    }
+    if (value.length < 6) {
+      return 'Минимум 6 символов';
+    }
+    return null;
+  }
+
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -45,12 +76,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!mounted) return;
 
     if (error == null) {
-      socketService.connect(authService.currentUser!.id);
+      final userId = authService.currentUser!.id;
+
+      socketService.connect(userId);
       chatService.init(
         token: authService.token!,
         socketService: socketService,
       );
-      callService.init(socketService: socketService);
+      callService.init(
+        socketService: socketService,
+        currentUserId: userId,
+      );
+
       await chatService.loadChats();
 
       if (!mounted) return;
@@ -61,7 +98,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text(error),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -83,36 +123,39 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 32),
                 TextFormField(
                   controller: _usernameController,
+                  keyboardType: TextInputType.name,
+                  textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
                     labelText: 'Имя пользователя',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.person),
                   ),
-                  validator: (v) =>
-                      v!.length < 3 ? 'Минимум 3 символа' : null,
+                  validator: _validateUsername,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
                     labelText: 'Email',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.email),
                   ),
-                  validator: (v) =>
-                      !v!.contains('@') ? 'Некорректный email' : null,
+                  validator: _validateEmail,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
+                  textInputAction: TextInputAction.done,
                   decoration: const InputDecoration(
                     labelText: 'Пароль',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.lock),
                   ),
-                  validator: (v) =>
-                      v!.length < 6 ? 'Минимум 6 символов' : null,
+                  validator: _validatePassword,
+                  onFieldSubmitted: (_) => _register(),
                 ),
                 const SizedBox(height: 24),
                 SizedBox(

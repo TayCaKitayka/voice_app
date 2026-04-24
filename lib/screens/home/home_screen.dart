@@ -8,6 +8,7 @@ import '../../models/user_model.dart';
 import '../auth/login_screen.dart';
 import '../call/call_screen.dart';
 import 'chat_list_screen.dart';
+import '../search/user_search_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,51 +19,54 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  SocketService? _socketService;
 
   @override
   void initState() {
     super.initState();
-    _listenForIncomingCalls();
-  }
-
-  void _listenForIncomingCalls() {
-    final socketService = context.read<SocketService>();
-
-    socketService.socket?.on('call:incoming', (data) {
-      debugPrint('📞 Входящий звонок: $data');
-      _showIncomingCallDialog(data);
+    // Откладываем до первого кадра — context уже готов
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _listenIncoming();
     });
   }
 
-  void _showIncomingCallDialog(Map<String, dynamic> callData) {
-    final callId = callData['callId'];
-    final callerId = callData['callerId'];
-    final isVideo = callData['isVideo'] ?? true;
+  @override
+  void dispose() {
+    // Отписываемся от события при уничтожении виджета
+    _socketService?.socket?.off('call:incoming', _handleIncomingCall);
+    super.dispose();
+  }
+
+  void _listenIncoming() {
+    _socketService = context.read<SocketService>();
+    _socketService?.socket?.on('call:incoming', _handleIncomingCall);
+  }
+
+  void _handleIncomingCall(dynamic data) {
+    if (!mounted) return;
+
+    final callId = data['callId']?.toString() ?? '';
+    final callerId = data['callerId']?.toString() ?? '';
+    final callerName = data['callerName']?.toString() ?? 'Собеседник';
+    final isVideo = data['isVideo'] as bool? ?? true;
+    final duration = data['duration'] as int? ?? 300;
+
+    // Сохраняем callService до входа в builder
+    final callService = context.read<CallService>();
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('📞 Входящий звонок'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.videocam, size: 64, color: Colors.blue),
-            const SizedBox(height: 16),
-            Text(
-              isVideo ? 'Видеозвонок' : 'Аудиозвонок',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Входящий звонок'),
+        content: Text(
+          '$callerName ${isVideo ? '(видео)' : '(аудио)'}',
         ),
         actions: [
           TextButton(
             onPressed: () {
-              context.read<CallService>().rejectCall(callId);
-              Navigator.pop(context);
+              callService.rejectCall(callId);
+              Navigator.pop(dialogContext);
             },
             child: const Text(
               'Отклонить',
@@ -71,26 +75,25 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(context);
-
-              final callerUser = UserModel(
-                id: callerId,
-                username: 'Собеседник',
-                email: '',
-              );
-
+              Navigator.pop(dialogContext);
+              if (!mounted) return;
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => CallScreen(
-                    otherUser: callerUser,
+                    otherUser: UserModel(
+                      id: callerId,
+                      username: callerName,
+                      email: '',
+                    ),
                     isIncoming: true,
+                    isVideo: isVideo,
                     callId: callId,
+                    durationSeconds: duration,
                   ),
                 ),
               );
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
             child: const Text('Принять'),
           ),
         ],
@@ -99,30 +102,23 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _logout() async {
-    final socketService = context.read<SocketService>();
-    final authService = context.read<AuthService>();
-    final chatService = context.read<ChatService>();
-    final callService = context.read<CallService>();
+    final auth = context.read<AuthService>();
+    final socket = context.read<SocketService>();
+    final chat = context.read<ChatService>();
+    final call = context.read<CallService>();
     final navigator = Navigator.of(context);
 
-    socketService.disconnect();
-    chatService.reset();
-    callService.reset();
-    await authService.logout();
+    socket.disconnect();
+    chat.reset();
+    call.reset();
+    await auth.logout();
 
     if (!mounted) return;
 
     navigator.pushReplacement(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
-  }
-
-  void _showSearchDialog() {
-    final chatService = context.read<ChatService>();
-
-    showDialog(
-      context: context,
-      builder: (_) => SearchUsersDialog(chatService: chatService),
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(),
+      ),
     );
   }
 
@@ -135,32 +131,41 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Messenger'),
         actions: [
           Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Center(
-              child: Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: socketService.isConnected
-                      ? Colors.green
-                      : Colors.red,
-                  shape: BoxShape.circle,
-                ),
-              ),
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Icon(
+              Icons.circle,
+              size: 12,
+              color: socketService.isConnected
+                  ? Colors.green
+                  : Colors.red,
             ),
           ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _logout,
+            tooltip: 'Выйти',
           ),
         ],
       ),
       body: _currentIndex == 0
           ? const ChatListScreen()
-          : const ProfileTab(),
+          : const Center(child: Text('Profile')),
+      floatingActionButton: _currentIndex == 0
+          ? FloatingActionButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const UserSearchScreen(),
+                  ),
+                );
+              },
+              child: const Icon(Icons.add),
+            )
+          : null,
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: (i) => setState(() => _currentIndex = i),
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.chat),
@@ -171,156 +176,6 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Профиль',
           ),
         ],
-      ),
-      floatingActionButton: _currentIndex == 0
-          ? FloatingActionButton(
-              onPressed: _showSearchDialog,
-              child: const Icon(Icons.add),
-            )
-          : null,
-    );
-  }
-}
-
-class ProfileTab extends StatelessWidget {
-  const ProfileTab({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final user = context.watch<AuthService>().currentUser;
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircleAvatar(
-            radius: 60,
-            child: Text(
-              user?.username[0].toUpperCase() ?? 'U',
-              style: const TextStyle(fontSize: 40),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            user?.username ?? '',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            user?.email ?? '',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class SearchUsersDialog extends StatefulWidget {
-  final ChatService chatService;
-
-  const SearchUsersDialog({
-    super.key,
-    required this.chatService,
-  });
-
-  @override
-  State<SearchUsersDialog> createState() => _SearchUsersDialogState();
-}
-
-class _SearchUsersDialogState extends State<SearchUsersDialog> {
-  final _searchController = TextEditingController();
-  List<UserModel> _users = [];
-  bool _isLoading = false;
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _search(String query) async {
-    if (query.length < 2) {
-      setState(() => _users = []);
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    final users = await widget.chatService.searchUsers(query);
-
-    if (!mounted) return;
-
-    setState(() {
-      _users = users;
-      _isLoading = false;
-    });
-  }
-
-  Future<void> _openChat(UserModel user) async {
-    await widget.chatService.createOrGetChat(user.id);
-    if (!mounted) return;
-    Navigator.pop(context);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Найти пользователя',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _searchController,
-              decoration: const InputDecoration(
-                hintText: 'Введите имя или email...',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
-              onChanged: _search,
-            ),
-            const SizedBox(height: 16),
-            if (_isLoading)
-              const CircularProgressIndicator()
-            else if (_users.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text('Начните вводить имя пользователя'),
-              )
-            else
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _users.length,
-                  itemBuilder: (context, index) {
-                    final user = _users[index];
-                    return ListTile(
-                      leading: CircleAvatar(
-                        child: Text(user.username[0].toUpperCase()),
-                      ),
-                      title: Text(user.username),
-                      subtitle: Text(user.email),
-                      trailing: Icon(
-                        Icons.circle,
-                        size: 12,
-                        color: user.online ? Colors.green : Colors.grey,
-                      ),
-                      onTap: () => _openChat(user),
-                    );
-                  },
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }
